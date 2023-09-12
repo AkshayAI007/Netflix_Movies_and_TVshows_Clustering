@@ -1,5 +1,5 @@
 # Netflix_Movies_and_TVshows_Clustering!
-[Uploading Screenshot 2023-09-12 211950.png…]()
+ [Uploading Screenshot 2023-09-12 211950.png…]()
 
 # Project Summary :
 # Problem Statement :
@@ -16,8 +16,7 @@ We have the data of which contains details of customers like id , age, gender an
 
 Features information:
 The dataset contains features like:
-
-`* show_id : Unique ID for every Movie / Tv Show
+ * show_id : Unique ID for every Movie / Tv Show
  * type : A Movie or TV Show
  * title : Title of the Movie / Tv Shows
  * director : Director of the Movie
