@@ -82,4 +82,40 @@ We chose K-Means Clustering because it performed well on our evaluation dataset 
 
 While Hierarchical Clustering - Agglomerative and DBSCAN Clustering also showed promising results, it was computationally expensive and required more processing power and time to execute. The Recommender System, on the other hand, was limited in its ability to cluster movies and TV shows based on shared attributes, and instead relied heavily on user behavior data to make recommendations.
 
-# K- Means Ckustering Model gives better results for calinski_harabasz_score (higher than others) and Davies-Bouldin score(lower than others) than Hierarchical Clustering and DBSCAN Clustering also gives good silhouette score.
+K- Means Ckustering Model gives better results for calinski_harabasz_score (higher than others) and Davies-Bouldin score(lower than others) than Hierarchical Clustering and DBSCAN Clustering also gives good silhouette score.
+
+# Conclusion :
+
+# CONCLUSION FROM EDA:
+
+* Netflix has more movies than TV shows available on the platform.
+
+* The majority of content on Netflix is suitable for mature audiences, with a TV-MA rating being the most common.
+
+* The United States is the country with the highest number of productions available on Netflix, followed by India and the United Kingdom.
+
+* Netflix has seen a steady increase in its content library since its inception in 2008.
+
+* The most common genre of content on Netflix is Dramas, followed by Comedies and Documentries.
+
+* The Wordcloud visualization of movie descriptions shows that some of the most common words used in Netflix movie descriptions include love, family, young, life, and world.
+
+* The correlation heatmap shows that there is a moderate positive correlation between the duration of a movie and its release year.
+
+* The pairplot shows some interesting patterns between variables such as the strong positive correlation between the number of reviews and the year of release, as well as a negative correlation between the rating and duration of a movie.
+
+# CONCLUSION FROM MODEL IMPLEMENTATION:
+
+* The data was clustered based on the attributes: director, cast, country, genre, rating, and description.
+
+* TFIDF vectorizer was used to tokenize, preprocess, and vectorize the values in these attributes, creating a total of 10000 attributes.
+
+* Principal Component Analysis (PCA) was used to reduce the dimensionality of the data which captured more than 95% of the variance.
+
+* K-Means Clustering algorithm was used to build clusters with the optimal number of clusters being 7 based on the elbow method and Silhouette score analysis.
+
+* Agglomerative clustering algorithm was used to build clusters with the optimal number of clusters being 5 based on the dendrogram visualization.
+
+* A content-based recommender system was built using cosine similarity and will make 10 recommendations to the user based on the type of show they watched.
+
+* DBSCAN clustering was built and it gives optimal number of clusters as 17 with very less metric score.
