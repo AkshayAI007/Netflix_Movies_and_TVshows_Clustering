@@ -1,5 +1,6 @@
 # Netflix_Movies_and_TVshows_Clustering!
- [Uploading Screenshot 2023-09-12 211950.png…]()
+
+![Screenshot 2023-09-12 211950](https://github.com/AkshayAI007/Netflix_Movies_and_TVshows_Clustering/assets/110448324/0da64563-2f2c-41f8-b4ed-0618d070be5f)
 
 # Project Summary :
 # Problem Statement :
