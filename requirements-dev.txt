@@ -1,0 +1,9 @@
+# Install with: pip install -r requirements-dev.txt
+-r requirements.txt
+matplotlib>=3.7
+seaborn>=0.12
+plotly>=5.0
+networkx>=3.0
+wordcloud>=1.9
+streamlit>=1.30
+jupyter>=1.0
