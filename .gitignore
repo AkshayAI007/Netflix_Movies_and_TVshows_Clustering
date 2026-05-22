@@ -1,0 +1,33 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+tmpvenv/
+venv/
+.venv/
+
+# Model cache (rebuilt on first run)
+models/*.joblib
+models/*.pkl
+
+# Legacy cache names at root (pre-refactor)
+recommender_cache.joblib
+model_cache.joblib
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Data (too large for git — supply separately or via DVC)
+# data/netflix_titles.csv
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+*.png
+*.jpg
