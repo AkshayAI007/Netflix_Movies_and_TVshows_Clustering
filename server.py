@@ -33,7 +33,12 @@ def _load_model() -> None:
     global rec, df_cat
     try:
         if os.path.exists(CACHE_PATH):
-            rec = NetflixRecommender.load(CACHE_PATH)
+            try:
+                rec = NetflixRecommender.load(CACHE_PATH)
+            except Exception:
+                log.warning('Cache incompatible (model upgrade?), rebuilding…')
+                rec = NetflixRecommender(data_path=DATA_PATH).fit()
+                rec.save(CACHE_PATH)
         else:
             rec = NetflixRecommender(data_path=DATA_PATH).fit()
             rec.save(CACHE_PATH)

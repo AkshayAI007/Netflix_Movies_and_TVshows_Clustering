@@ -1,5 +1,5 @@
 """
-NetflixRecommender — production wrapper around TwoStageHybrid.
+NetflixRecommender — production wrapper around TwoStageHybridV3.
 
 Exposes:
   recommend()                — standard filtered recommendations
@@ -19,7 +19,8 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from .config import DATA_PATH, CACHE_PATH, MODELS_DIR, FEATURE_WEIGHTS
 from .preprocessing import load_and_build, transform_single
-from .models import TwoStageHybrid, WeightedHybridModel, NMFLatentModel, ClusteringModel
+from .models import WeightedHybridModel, NMFLatentModel
+from .models_advanced import TwoStageHybridV3, LDATopicModel, BisectingKMeansModel
 
 log = logging.getLogger(__name__)
 
@@ -44,8 +45,8 @@ class NetflixRecommender:
                  weights: dict = None):
         self.data_path = data_path
         self.weights   = weights or FEATURE_WEIGHTS
-        self._model: TwoStageHybrid = None
-        self._df: pd.DataFrame      = None
+        self._model: TwoStageHybridV3 = None
+        self._df: pd.DataFrame        = None
 
     # ── Fitting ───────────────────────────────────────────────────────────────
 
@@ -54,7 +55,7 @@ class NetflixRecommender:
         combined, transformers, df_clean = load_and_build(
             self.data_path, self.weights
         )
-        self._model = TwoStageHybrid()
+        self._model = TwoStageHybridV3()
         self._model.fit_prebuilt(combined, transformers, df_clean)
         self._df = self._model.df
         return self
@@ -186,10 +187,13 @@ class NetflixRecommender:
             'combined':        self._model.hybrid.matrix,
             'transformers':    self._model.transformers,
             'nmf_W':           self._model._nmf._W,
+            'lda_H':           self._model._lda._H,
             'cluster_labels':  self._model._cluster._labels,
             'cluster_reduced': self._model._cluster._reduced,
             'weights':         self.weights,
             'alpha':           self._model.alpha,
+            'beta':            self._model.beta,
+            'gamma':           self._model.gamma,
             'n_candidates':    self._model.n_candidates,
         }
         joblib.dump(payload, path, compress=3)
@@ -207,31 +211,40 @@ class NetflixRecommender:
         df_clean     = payload['df_clean']
         combined     = payload['combined']
         transformers = payload['transformers']
+        df_reset     = df_clean.reset_index(drop=True)
 
         hybrid = WeightedHybridModel()
         hybrid.fit_prebuilt(combined, transformers, df_clean)
 
-        nmf      = NMFLatentModel()
-        nmf._df  = df_clean.reset_index(drop=True)
-        nmf._W   = payload['nmf_W']
+        nmf              = NMFLatentModel()
+        nmf._df          = df_reset
+        nmf._W           = payload['nmf_W']
         nmf._score_cache = {}
 
-        cluster          = ClusteringModel()
-        cluster._df      = df_clean.reset_index(drop=True)
+        lda              = LDATopicModel()
+        lda._df          = df_reset
+        lda._H           = payload['lda_H']
+        lda._score_cache = {}
+
+        cluster          = BisectingKMeansModel()
+        cluster._df      = df_reset
         cluster._labels  = payload['cluster_labels']
         cluster._reduced = payload['cluster_reduced']
 
-        model          = TwoStageHybrid(
+        model          = TwoStageHybridV3(
             alpha=payload['alpha'],
+            beta=payload.get('beta', 0.15),
+            gamma=payload.get('gamma', 0.15),
             n_candidates=payload['n_candidates'],
         )
         model._hybrid  = hybrid
         model._nmf     = nmf
+        model._lda     = lda
         model._cluster = cluster
-        model._df      = df_clean.reset_index(drop=True)
+        model._df      = df_reset
 
         rec._model = model
-        rec._df    = df_clean.reset_index(drop=True)
+        rec._df    = df_reset
 
         log.info('Recommender loaded from %s (%d titles)', path, len(rec._df))
         return rec

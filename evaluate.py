@@ -132,7 +132,8 @@ def evaluate_model(model, df: pd.DataFrame, eval_titles: list,
                    k: int = 10) -> dict:
     """Run all metrics on eval_titles. model.recommend(title, n=k) must return a
     DataFrame with a 'title' column."""
-    p_scores, ild_scores, nov_scores, seren_scores, runtimes = [], [], [], [], []
+    p_scores, ild_scores, nov_scores, seren_scores, ndcg_scores, runtimes = \
+        [], [], [], [], [], []
     all_recs = []
 
     for title in eval_titles:
@@ -149,6 +150,7 @@ def evaluate_model(model, df: pd.DataFrame, eval_titles: list,
         ild_scores.append(intra_list_diversity(rec_titles, df, genre_mat, title_to_idx))
         nov_scores.append(novelty_score(rec_titles, df))
         seren_scores.append(serendipity_score(rec_titles, title, df, k))
+        ndcg_scores.append(ndcg_at_k(rec_titles, title, df, k))
 
     return {
         f'precision@{k}': round(float(np.mean(p_scores)), 4),
@@ -156,8 +158,32 @@ def evaluate_model(model, df: pd.DataFrame, eval_titles: list,
         'coverage':        round(catalog_coverage(all_recs, len(df)), 4),
         'novelty':         round(float(np.mean(nov_scores)), 4),
         'serendipity':     round(float(np.mean(seren_scores)), 4),
+        'ndcg@10':         round(float(np.mean(ndcg_scores)), 4),
         'avg_latency_ms':  round(float(np.mean(runtimes)), 2),
     }
+
+
+# ── Metric 7: NDCG@K (position-aware) ────────────────────────────────────────
+
+def ndcg_at_k(recommended: list, query: str,
+              df: pd.DataFrame, k: int = 10) -> float:
+    """
+    Normalised Discounted Cumulative Gain.
+    Relevance = 1 if shared genre with query else 0.
+    Rewards putting relevant items higher in the list.
+    """
+    query_genres = _genres_of(query, df)
+    if not query_genres:
+        return 0.0
+    rels = [
+        1 if _genres_of(t, df) & query_genres else 0
+        for t in recommended[:k]
+    ]
+    dcg  = sum(r / np.log2(i + 2) for i, r in enumerate(rels))
+    # Ideal DCG: all relevant items at top
+    n_relevant = sum(rels)
+    idcg = sum(1 / np.log2(i + 2) for i in range(n_relevant))
+    return float(dcg / idcg) if idcg > 0 else 0.0
 
 
 def compare_models(models: dict, df: pd.DataFrame, eval_titles: list,
@@ -170,14 +196,102 @@ def compare_models(models: dict, df: pd.DataFrame, eval_titles: list,
     return pd.DataFrame(rows).T
 
 
+# ── Master comparison runner ──────────────────────────────────────────────────
+
+def compare_all(df_clean: pd.DataFrame, combined, transformers: dict,
+                eval_titles: list, genre_mat: np.ndarray,
+                title_to_idx: dict, k: int = 10,
+                save_path: str = None) -> pd.DataFrame:
+    """
+    Fit and evaluate all 9 models on the same pre-built feature matrix.
+    Returns a comparison DataFrame sorted by precision@k descending.
+    Optionally saves results to save_path (CSV).
+    """
+    import os
+    from recommender.models import (
+        TFIDFCosineModel, BM25Model, WeightedHybridModel,
+        NMFLatentModel, ClusteringModel, TwoStageHybrid,
+    )
+    from recommender.models_advanced import (
+        LDATopicModel, GMMClusteringModel, BisectingKMeansModel,
+        TwoStageHybridV2, TwoStageHybridV3,
+    )
+
+    # Wrappers so each model exposes .recommend(title, n=k)
+    class _ClusterWrap:
+        def __init__(self, m): self._m = m
+        def recommend(self, title, n=10, filters=None):
+            return self._m.recommend(title, n=n, same_cluster_only=False)
+
+    log.info('Building all models from shared feature matrix…')
+
+    # Baselines — need df with desc_clean
+    tfidf = TFIDFCosineModel().fit(df_clean)
+    bm25  = BM25Model().fit(df_clean)
+
+    # Primary models — use pre-built matrix
+    hybrid = WeightedHybridModel()
+    hybrid.fit_prebuilt(combined, transformers, df_clean)
+
+    nmf = NMFLatentModel()
+    nmf.fit(combined, df_clean)
+
+    kmeans = ClusteringModel()
+    kmeans.fit(combined, df_clean)
+
+    lda = LDATopicModel()
+    lda.fit(combined, df_clean)
+
+    gmm = GMMClusteringModel()
+    gmm.fit(combined, df_clean)
+
+    bkm = BisectingKMeansModel()
+    bkm.fit(combined, df_clean)
+
+    prod = TwoStageHybrid()
+    prod.fit_prebuilt(combined, transformers, df_clean)
+
+    v2 = TwoStageHybridV2()
+    v2.fit_prebuilt(combined, transformers, df_clean)
+
+    v3 = TwoStageHybridV3()
+    v3.fit_prebuilt(combined, transformers, df_clean)
+
+    model_registry = {
+        '1. TFIDFCosine (baseline)':         tfidf,
+        '2. BM25 (baseline)':                bm25,
+        '3. WeightedHybrid':                 hybrid,
+        '4. NMF (standalone)':               nmf,
+        '5. KMeans Clustering':              _ClusterWrap(kmeans),
+        '6. LDA (standalone)':               lda,
+        '7. GMM Clustering':                 _ClusterWrap(gmm),
+        '8. BisectingKMeans':                _ClusterWrap(bkm),
+        '9. TwoStageHybrid (current prod)':  prod,
+        '10. TwoStageHybridV2 (LDA)':        v2,
+        '11. TwoStageHybridV3 (NMF+LDA)':   v3,
+    }
+
+    results = compare_models(
+        model_registry, df_clean, eval_titles, genre_mat, title_to_idx, k
+    )
+    results = results.sort_values(f'precision@{k}', ascending=False)
+
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        results.to_csv(save_path)
+        log.info('Saved comparison results to %s', save_path)
+
+    return results
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    import joblib
     from sklearn.preprocessing import MultiLabelBinarizer
 
     from recommender.preprocessing import load_and_build, parse_genres
-    from recommender.models import TwoStageHybrid
+    from recommender.config import MODELS_DIR
+    import os
 
     logging.basicConfig(level=logging.INFO,
                         format='%(levelname)s %(name)s — %(message)s')
@@ -185,20 +299,22 @@ if __name__ == '__main__':
     log.info('Loading data and building features…')
     combined, transformers, df_clean = load_and_build()
 
-    log.info('Fitting TwoStageHybrid…')
-    model = TwoStageHybrid()
-    model.fit_prebuilt(combined, transformers, df_clean)
-
     genres_list  = df_clean['listed_in'].apply(parse_genres).tolist()
     mlb          = MultiLabelBinarizer()
     genre_mat    = mlb.fit_transform(genres_list).astype(float)
     title_to_idx = {t: i for i, t in enumerate(df_clean['title'])}
+    eval_titles  = df_clean.sample(500, random_state=42)['title'].tolist()
 
-    eval_titles = df_clean.sample(500, random_state=42)['title'].tolist()
+    save_path = os.path.join(MODELS_DIR, 'comparison_results.csv')
+    results   = compare_all(
+        df_clean, combined, transformers,
+        eval_titles, genre_mat, title_to_idx,
+        save_path=save_path,
+    )
 
-    log.info('Evaluating on 500 random titles…')
-    results = evaluate_model(model, df_clean, eval_titles, genre_mat, title_to_idx)
-
-    print('\n=== Results ===')
-    for metric, value in results.items():
-        print(f'  {metric:<20} {value}')
+    print('\n' + '='*72)
+    print('MODEL COMPARISON — 500-title holdout, genre-overlap relevance proxy')
+    print('='*72)
+    print(results.to_string())
+    print('='*72)
+    print(f'\nSaved to: {save_path}')

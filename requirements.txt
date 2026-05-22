@@ -5,3 +5,4 @@ scipy>=1.10
 joblib>=1.2
 flask>=2.0
 gunicorn>=21.0
+hdbscan>=0.8

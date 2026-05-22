@@ -7,3 +7,4 @@ networkx>=3.0
 wordcloud>=1.9
 streamlit>=1.30
 jupyter>=1.0
+hdbscan>=0.8
