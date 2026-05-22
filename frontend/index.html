@@ -1448,8 +1448,8 @@ function renderResultsInto(elId, items, queryTitle, showExplain=true){
 }
 
 async function runSimilar(){
-  const title=S.querySim;
-  if(!title){ showError('sim-results','Please select a title from the search dropdown'); return; }
+  const title=S.querySim||document.getElementById('sim-input').value.trim();
+  if(!title){ showError('sim-results','Please enter or select a title'); return; }
   setLoading('sim-btn',true);
   const f=getFilters();
   try{
@@ -1467,8 +1467,8 @@ async function runSimilar(){
 }
 
 async function runCross(){
-  const title=S.queryCx;
-  if(!title){ showError('cx-results','Please select a title'); return; }
+  const title=S.queryCx||document.getElementById('cx-input').value.trim();
+  if(!title){ showError('cx-results','Please enter or select a title'); return; }
   setLoading('cx-btn',true);
   try{
     const res=await fetch('/api/cross-type',{method:'POST',
