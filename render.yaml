@@ -3,5 +3,5 @@ services:
     name: netflix-recommender
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn server:app -c gunicorn.conf.py
+    startCommand: python -m gunicorn server:app -c gunicorn.conf.py
     healthCheckPath: /health
