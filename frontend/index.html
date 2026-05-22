@@ -638,9 +638,38 @@ footer{
   border-radius:var(--rs);padding:12px 16px;font-size:13px;color:rgba(255,150,150,0.9);
   display:flex;align-items:center;gap:8px;animation:fadeSlideIn 0.3s ease;
 }
+/* ── Model-loading banner ─────────────────────────────── */
+#model-loading-banner{
+  display:none;position:fixed;top:0;left:0;width:100%;z-index:9999;
+  background:linear-gradient(90deg,#0d0d0d,#1a0a0a,#0d0d0d);
+  border-bottom:1px solid rgba(229,9,20,0.35);
+  padding:10px 24px;
+  display:flex;align-items:center;gap:12px;
+  font-size:13px;color:rgba(255,255,255,0.75);
+  animation:bannerIn 0.4s ease;
+}
+@keyframes bannerIn{from{transform:translateY(-100%)}to{transform:translateY(0)}}
+#model-loading-banner .spin{
+  width:16px;height:16px;border-radius:50%;
+  border:2px solid rgba(229,9,20,0.25);
+  border-top-color:#e50914;
+  animation:spin 0.8s linear infinite;flex-shrink:0;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+#model-loading-banner .banner-msg{flex:1}
+#model-loading-banner .banner-pct{
+  font-size:11px;color:rgba(229,9,20,0.85);font-weight:600;letter-spacing:.06em;
+}
 </style>
 </head>
 <body>
+
+<!-- Model-loading banner (hidden once ready) -->
+<div id="model-loading-banner" style="display:none">
+  <div class="spin"></div>
+  <span class="banner-msg">AI engine warming up — building recommendation model…</span>
+  <span class="banner-pct" id="banner-pct">please wait</span>
+</div>
 
 <!-- ──────────────────────────────────────────────────────
      NEURAL NETWORK CANVAS
@@ -961,10 +990,30 @@ const S = {
   chartGenre: null, chartScore: null,
 };
 
+/* ── Model readiness polling ─────────────────────────── */
+async function waitForModel(){
+  const banner = document.getElementById('model-loading-banner');
+  const pct    = document.getElementById('banner-pct');
+  let   dots   = 0;
+  const tick   = () => { dots=(dots+1)%4; pct.textContent='please wait'+ '.'.repeat(dots); };
+  const timer  = setInterval(tick, 500);
+
+  while(true){
+    try{
+      const r = await fetch('/health');
+      const d = await r.json();
+      if(d.status==='ok'){ clearInterval(timer); banner.style.display='none'; return; }
+    }catch(e){}
+    banner.style.display='flex';
+    await new Promise(r=>setTimeout(r,2500));
+  }
+}
+
 /* ── Init ────────────────────────────────────────────── */
 window.addEventListener('DOMContentLoaded', async () => {
   initNeuralCanvas();
   scheduleIntroExit();
+  await waitForModel();
   await loadCatalogInfo();
   initSearch('sim-input','sim-clear','sim-dropdown', t=>{ S.querySim=t; });
   initSearch('cx-input','cx-clear','cx-dropdown', t=>{ S.queryCx=t; updateCrossTypeBar(t); });
