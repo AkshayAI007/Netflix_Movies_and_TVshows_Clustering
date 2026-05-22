@@ -2,6 +2,7 @@
 
 import logging
 import os
+import threading
 
 from flask import Flask, jsonify, request, send_from_directory
 import pandas as pd
@@ -20,27 +21,59 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 app   = Flask(__name__, static_folder=os.path.join(_HERE, 'frontend'),
               static_url_path='')
 
-# ── Load recommender once at startup ──────────────────────────────────────────
-log.info('Loading recommender…')
-if os.path.exists(CACHE_PATH):
-    rec = NetflixRecommender.load(CACHE_PATH)
-else:
-    rec = NetflixRecommender(data_path=DATA_PATH).fit()
-    rec.save(CACHE_PATH)
-
-df_cat = rec.catalog
-log.info('Ready — %d titles loaded.', len(df_cat))
+# ── Model state ────────────────────────────────────────────────────────────────
+# Loaded in a background thread so gunicorn binds to the port immediately.
+# Routes return 503 until _ready is set.
+rec: NetflixRecommender = None
+df_cat: pd.DataFrame    = None
+_ready = threading.Event()
 
 
-# ── Routes ─────────────────────────────────────────────────────────────────────
+def _load_model() -> None:
+    global rec, df_cat
+    try:
+        if os.path.exists(CACHE_PATH):
+            rec = NetflixRecommender.load(CACHE_PATH)
+        else:
+            rec = NetflixRecommender(data_path=DATA_PATH).fit()
+            rec.save(CACHE_PATH)
+        df_cat = rec.catalog
+        _ready.set()
+        log.info('Model ready — %d titles loaded.', len(df_cat))
+    except Exception:
+        log.exception('Model loading failed.')
+
+
+threading.Thread(target=_load_model, daemon=True).start()
+
+
+def _require_model():
+    """Return a 503 response tuple if the model isn't ready yet, else None."""
+    if not _ready.is_set():
+        return jsonify({'error': 'Model loading, please retry in a few seconds.'}), 503
+    return None
+
+
+# ── Health / root ──────────────────────────────────────────────────────────────
+
+@app.route('/health')
+def health():
+    if _ready.is_set():
+        return jsonify({'status': 'ok', 'titles': len(df_cat)})
+    return jsonify({'status': 'loading'}), 503
+
 
 @app.route('/')
 def index():
     return send_from_directory(app.static_folder, 'index.html')
 
 
+# ── API routes ─────────────────────────────────────────────────────────────────
+
 @app.route('/api/info')
 def info():
+    if (err := _require_model()) is not None:
+        return err
     return jsonify({
         'total':    len(df_cat),
         'movies':   int((df_cat['type'] == 'Movie').sum()),
@@ -56,6 +89,8 @@ def info():
 
 @app.route('/api/titles')
 def titles():
+    if (err := _require_model()) is not None:
+        return err
     q     = request.args.get('q', '').lower().strip()
     all_t = sorted(df_cat['title'].tolist())
     if not q:
@@ -67,6 +102,8 @@ def titles():
 
 @app.route('/api/recommend', methods=['POST'])
 def recommend():
+    if (err := _require_model()) is not None:
+        return err
     d      = request.get_json(force=True)
     title  = d.get('title', '')
     n      = int(d.get('n', 10))
@@ -91,6 +128,8 @@ def recommend():
 
 @app.route('/api/cross-type', methods=['POST'])
 def cross_type():
+    if (err := _require_model()) is not None:
+        return err
     d     = request.get_json(force=True)
     title = d.get('title', '')
     n     = int(d.get('n', 10))
@@ -107,6 +146,8 @@ def cross_type():
 
 @app.route('/api/cold-start', methods=['POST'])
 def cold_start():
+    if (err := _require_model()) is not None:
+        return err
     d = request.get_json(force=True)
     try:
         results = rec.recommend_for_cold_start(
@@ -128,6 +169,8 @@ def cold_start():
 
 @app.route('/api/title-info')
 def title_info():
+    if (err := _require_model()) is not None:
+        return err
     title = request.args.get('title', '')
     row   = df_cat[df_cat['title'] == title]
     if row.empty:
@@ -145,7 +188,6 @@ def title_info():
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _enrich(results: pd.DataFrame, query_title: str) -> list:
-    """Attach explanation dict to each result row."""
     rows = []
     for _, row in results.iterrows():
         item = row.to_dict()
